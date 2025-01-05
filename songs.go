@@ -109,6 +109,46 @@ func scrapeSongsFromMaimaiDxNet() []Song {
 	return songs
 }
 
+func getSongURLsFromGamerch() []string {
+	url := "https://gamerch.com/maimai/545589"
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0")
+
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		bodyBytes, err := io.ReadAll(res.Body)
+		if err != nil {
+			log.Fatal(err)
+		}
+		bodyString := string(bodyBytes)
+		log.Println(bodyString)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(res.Body)
+	if err != nil {
+		panic(err)
+	}
+
+	var songURLs []string
+	doc.Find(".markup.mu .mu__list--1").Each(func(i int, s *goquery.Selection) {
+		// FIXME: delete this later
+		if i > 4 {
+			return
+		}
+		url := s.Find("a").AttrOr("href", "hohoho")
+		songURLs = append(songURLs, url)
+	})
+
+	return songURLs
+}
+
 func getSongsFromDB() []Song {
 	dbURL := "http://localhost:8080/v1/songs"
 	req, _ := http.NewRequest("GET", dbURL, nil)
