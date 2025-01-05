@@ -16,13 +16,60 @@ import (
 type Song struct {
 	Title    string `json:"title"`
 	Artist   string `json:"artist"`
-	Creator  string `json:"creator"`
 	Genre    string `json:"genre"`
-	Bpm      int32  `json:"bpm"`
-	ImageUrl string `json:"imageUrl"`
+	Bpm      string `json:"bpm"`
+	ImageURL string `json:"imageURL"`
 }
 
-func scrapeSongs() []Song {
+func printSongs(songs []Song) {
+	for _, song := range songs {
+		fmt.Println("Title:", song.Title)
+		fmt.Println("Artist:", song.Artist)
+		fmt.Println("Genre:", song.Genre)
+		fmt.Println("Bpm:", song.Bpm)
+		fmt.Println("ImageURL:", song.ImageURL)
+		fmt.Println()
+	}
+}
+
+func getSongsFromAPI() []Song {
+	apiURL := "https://maimai.sega.jp/data/maimai_songs.json"
+	req, _ := http.NewRequest("GET", apiURL, nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0")
+
+	client := &http.Client{}
+	r, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer r.Body.Close()
+
+	type parameters struct {
+		Artist   string `json:"artist"`
+		CatCode  string `json:"catcode"`
+		Title    string `json:"title"`
+		ImageURL string `json:"image_url"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	params := []parameters{}
+	decoder.Decode(&params)
+
+	songs := []Song{}
+	for _, p := range params {
+		song := Song{
+			Title:    p.Title,
+			Artist:   p.Artist,
+			Genre:    p.CatCode,
+			ImageURL: "https://maimaidx.jp/maimai-mobile/img/Music/" + p.ImageURL,
+		}
+		songs = append(songs, song)
+	}
+
+	return songs
+}
+
+func scrapeSongsFromMaimaiDxNet() []Song {
 	godotenv.Load(".env")
 
 	segaID := os.Getenv("SEGA_ID")
@@ -34,7 +81,7 @@ func scrapeSongs() []Song {
 		panic(err)
 	}
 
-	res, err := m.HttpClient.Get(maimaiUrl + "/record/musicGenre/search/?genre=99&diff=3")
+	res, err := m.HttpClient.Get(maimaiURL + "/record/musicGenre/search/?genre=99&diff=3")
 	if err != nil {
 		log.Println("GET error: ", err)
 		panic(err)
@@ -52,10 +99,9 @@ func scrapeSongs() []Song {
 		song := Song{
 			Title:    title,
 			Artist:   "",
-			Creator:  "",
 			Genre:    "",
-			Bpm:      0,
-			ImageUrl: "",
+			Bpm:      "?",
+			ImageURL: "",
 		}
 		songs = append(songs, song)
 	})
@@ -88,7 +134,7 @@ func getSongsFromDB() []Song {
 		fmt.Println(song.Title)
 	}
 
-	return nil
+	return songs
 }
 
 func saveSongsToDB(songs []Song) {
@@ -112,7 +158,7 @@ func saveSongsToDB(songs []Song) {
 				log.Fatal(err)
 			}
 			bodyString := string(bodyBytes)
-			log.Println(bodyString)
+			log.Println(song.Title, bodyString)
 		}
 	}
 }

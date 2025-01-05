@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	maimaiUrl = "https://maimaidx.jp/maimai-mobile"
+	maimaiURL = "https://maimaidx.jp/maimai-mobile"
 )
 
 type MaimaiClient struct {
@@ -35,7 +35,7 @@ func New() *MaimaiClient {
 }
 
 func (m *MaimaiClient) Login(segaId, password string) error {
-	res, err := m.HttpClient.Get(maimaiUrl)
+	res, err := m.HttpClient.Get(maimaiURL)
 	if err != nil {
 		return err
 	}
@@ -54,13 +54,13 @@ func (m *MaimaiClient) Login(segaId, password string) error {
 	values.Set("segaId", segaId)
 	values.Set("password", password)
 	values.Set("token", csrfToken)
-	_, err = m.HttpClient.PostForm(maimaiUrl+"/submit", values)
+	_, err = m.HttpClient.PostForm(maimaiURL+"/submit", values)
 	if err != nil {
 		return err
 	}
 
 	// redirect to set cookies
-	_, err = m.HttpClient.Get(maimaiUrl + "/aimeList/submit/?idx=0")
+	_, err = m.HttpClient.Get(maimaiURL + "/aimeList/submit/?idx=0")
 	if err != nil {
 		return err
 	}
