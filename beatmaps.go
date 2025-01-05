@@ -7,7 +7,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 type Beatmap struct {
@@ -35,10 +40,99 @@ func printBeatmaps(beatmap []Beatmap) {
 	}
 }
 
+func getBeatmapDataFromLocal() []Beatmap {
+	beatmaps := []Beatmap{}
+
+	// for i := 0; i < 1437; i++ {
+	for i := 0; i < 1; i++ {
+		f, err := os.Open(fmt.Sprintf("html/%v.html", i+1))
+		check(err)
+		defer f.Close()
+
+		doc, err := goquery.NewDocumentFromReader(f)
+		check(err)
+
+		doc.Find("table").Each(func(j int, s *goquery.Selection) {
+			// check top left cell to determine which table
+			topLeftCell := s.Find(".mu__table--row1 .mu__table--col1").Text()
+
+			// 基本データ
+			if topLeftCell == "" && j == 0 {
+				s.Find(".mu__table--row2 .mu__table--col2").Text()
+				return
+			}
+
+			// 譜面データ
+			if topLeftCell == "Lv" {
+				// 定数あるか
+				hasInternalLevel := strings.Contains(s.Find("thead th").Text(), "定数")
+
+				// dx or std
+				beatmapType := "std"
+				if strings.Contains(s.Find("thead th").Text(), "Touch") {
+					beatmapType = "dx"
+				}
+				s.Find("tbody tr").Each(func(j int, s *goquery.Selection) {
+					beatmap := Beatmap{}
+					col := []string{"level", "internalLevel", "totalNotes", "Tap", "Hold", "Slide", "Tap", "Break"}
+					now := s.Find("th")
+					for k := 0; k < len(col); k++ {
+						switch k {
+						case 0: // Level
+							beatmap.Level = now.Text()
+						case 1: // 譜面定数
+							if !hasInternalLevel {
+								continue
+							}
+							beatmap.InternalLevel = now.Text()
+						case 2: // 総数
+							tap, err := strconv.Atoi(now.Text())
+							check(err)
+							beatmap.Tap = int32(tap)
+						case 3: // Tap
+							tap, err := strconv.Atoi(now.Text())
+							check(err)
+							beatmap.Tap = int32(tap)
+						case 4: // Hold
+							hold, err := strconv.Atoi(now.Text())
+							check(err)
+							beatmap.Hold = int32(hold)
+						case 5: // Slide
+							slide, err := strconv.Atoi(now.Text())
+							check(err)
+							beatmap.Slide = int32(slide)
+						case 6: // Touch
+							if beatmapType == "std" {
+								continue
+							}
+							touch, err := strconv.Atoi(now.Text())
+							check(err)
+							beatmap.Touch = int32(touch)
+						case 7: // Break
+							slide, err := strconv.Atoi(now.Text())
+							check(err)
+							beatmap.Break = int32(slide)
+						}
+						now = now.Next()
+					}
+					beatmaps = append(beatmaps, beatmap)
+				})
+			}
+		})
+	}
+	return beatmaps
+}
+
 func getBeatmapDataFromGamerch() []Beatmap {
 	beatmaps := []Beatmap{}
 
-	songURLs := getSongURLsFromGamerch()
+	// songURLs := getSongURLsFromGamerch()
+	// シンフォ
+	// oshama
+	// ジャガー
+	// True
+	// ブリキ
+	songURLs := []string{"https://gamerch.com/maimai/533866", "https://gamerch.com/maimai/533541", "https://gamerch.com/maimai/533652", "https://gamerch.com/maimai/534105", "https://gamerch.com/maimai/533417"}
 	for _, url := range songURLs {
 		req, _ := http.NewRequest("GET", url, nil)
 		req.Header.Set("Content-Type", "application/json")
@@ -60,6 +154,20 @@ func getBeatmapDataFromGamerch() []Beatmap {
 			bodyString := string(bodyBytes)
 			log.Println(bodyString)
 		}
+
+		doc, err := goquery.NewDocumentFromReader(res.Body)
+		if err != nil {
+			panic(err)
+		}
+		doc.Find(".mu__table").Each(func(i int, s *goquery.Selection) {
+			innerHTML, _ := s.Html()
+			fmt.Println(innerHTML)
+		})
+		fmt.Println()
+
+		// でらっくす譜面チェック
+		// noteType := doc.Find(".mu__table--row2 .mu__table--col7").First().Text()
+		// fmt.Println(noteType)
 
 		beatmap := Beatmap{}
 		beatmaps = append(beatmaps, beatmap)

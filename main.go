@@ -19,13 +19,7 @@ func check(e error) {
 }
 
 func doshit() {
-	// songURLs := getSongURLsFromGamerch()
-	// シンフォ
-	// oshama
-	// ジャガー
-	// True
-	// ブリキ
-	songURLs := []string{"https://gamerch.com/maimai/533866", "https://gamerch.com/maimai/533541", "https://gamerch.com/maimai/533652", "https://gamerch.com/maimai/534105", "https://gamerch.com/maimai/533417"}
+	songURLs := getSongURLsFromGamerch()
 	for i, url := range songURLs {
 		req, _ := http.NewRequest("GET", url, nil)
 		req.Header.Set("Content-Type", "application/json")
@@ -75,7 +69,10 @@ func writeSongToJson() {
 
 func main() {
 	// getBeatmapDataFromGamerch()
-	doshit()
+	beatmaps := getBeatmapDataFromLocal()
+	for _, b := range beatmaps {
+		fmt.Println(b)
+	}
 
 	fmt.Println(".")
 }
