@@ -1,4 +1,4 @@
-module github.com/asashakira/maimaidx-beatmap-scraper
+module github.com/asashakira/mai.gg-fetcher
 
 go 1.23.4
 

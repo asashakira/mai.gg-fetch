@@ -1,1 +1,1 @@
-# maimaidx beatmap scraper
+# mai.gg-fetcher
