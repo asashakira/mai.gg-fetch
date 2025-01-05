@@ -141,10 +141,6 @@ func getSongURLsFromGamerch() []string {
 
 	var songURLs []string
 	doc.Find(".markup.mu .mu__list--1").Each(func(i int, s *goquery.Selection) {
-		// FIXME: delete this later
-		// if i > 4 {
-		// 	return
-		// }
 		url := s.Find("a").AttrOr("href", "hohoho")
 		songURLs = append(songURLs, url)
 	})
