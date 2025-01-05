@@ -14,7 +14,7 @@ const (
 )
 
 type MaimaiClient struct {
-	HttpClient *http.Client
+	HTTPClient *http.Client
 }
 
 func New() *MaimaiClient {
@@ -25,7 +25,7 @@ func New() *MaimaiClient {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
-	c.HttpClient = &http.Client{
+	c.HTTPClient = &http.Client{
 		Transport:     tr,
 		CheckRedirect: http.DefaultClient.CheckRedirect,
 		Jar:           cookiejar,
@@ -35,7 +35,7 @@ func New() *MaimaiClient {
 }
 
 func (m *MaimaiClient) Login(segaId, password string) error {
-	res, err := m.HttpClient.Get(maimaiURL)
+	res, err := m.HTTPClient.Get(maimaiURL)
 	if err != nil {
 		return err
 	}
@@ -54,13 +54,13 @@ func (m *MaimaiClient) Login(segaId, password string) error {
 	values.Set("segaId", segaId)
 	values.Set("password", password)
 	values.Set("token", csrfToken)
-	_, err = m.HttpClient.PostForm(maimaiURL+"/submit", values)
+	_, err = m.HTTPClient.PostForm(maimaiURL+"/submit", values)
 	if err != nil {
 		return err
 	}
 
 	// redirect to set cookies
-	_, err = m.HttpClient.Get(maimaiURL + "/aimeList/submit/?idx=0")
+	_, err = m.HTTPClient.Get(maimaiURL + "/aimeList/submit/?idx=0")
 	if err != nil {
 		return err
 	}

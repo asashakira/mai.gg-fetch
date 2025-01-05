@@ -81,7 +81,7 @@ func scrapeSongsFromMaimaiDxNet() []Song {
 		panic(err)
 	}
 
-	res, err := m.HttpClient.Get(maimaiURL + "/record/musicGenre/search/?genre=99&diff=3")
+	res, err := m.HTTPClient.Get(maimaiURL + "/record/musicGenre/search/?genre=99&diff=3")
 	if err != nil {
 		log.Println("GET error: ", err)
 		panic(err)
