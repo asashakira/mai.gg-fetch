@@ -8,17 +8,20 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/joho/godotenv"
 )
 
 type Song struct {
-	Title    string `json:"title"`
-	Artist   string `json:"artist"`
-	Genre    string `json:"genre"`
-	Bpm      string `json:"bpm"`
-	ImageURL string `json:"imageURL"`
+	Title       string `json:"title"`
+	Artist      string `json:"artist"`
+	Genre       string `json:"genre"`
+	BPM         string `json:"bpm"`
+	ImageURL    string `json:"imageURL"`
+	Version     string `json:"version"`
+	ReleaseDate string `json:"releaseDate"`
 }
 
 func printSongs(songs []Song) {
@@ -26,7 +29,7 @@ func printSongs(songs []Song) {
 		fmt.Println("Title:", song.Title)
 		fmt.Println("Artist:", song.Artist)
 		fmt.Println("Genre:", song.Genre)
-		fmt.Println("Bpm:", song.Bpm)
+		fmt.Println("Bpm:", song.BPM)
 		fmt.Println("ImageURL:", song.ImageURL)
 		fmt.Println()
 	}
@@ -100,7 +103,7 @@ func scrapeSongsFromMaimaiDxNet() []Song {
 			Title:    title,
 			Artist:   "",
 			Genre:    "",
-			Bpm:      "?",
+			BPM:      "?",
 			ImageURL: "",
 		}
 		songs = append(songs, song)
@@ -139,14 +142,67 @@ func getSongURLsFromGamerch() []string {
 	var songURLs []string
 	doc.Find(".markup.mu .mu__list--1").Each(func(i int, s *goquery.Selection) {
 		// FIXME: delete this later
-		if i > 4 {
-			return
-		}
+		// if i > 4 {
+		// 	return
+		// }
 		url := s.Find("a").AttrOr("href", "hohoho")
 		songURLs = append(songURLs, url)
 	})
 
 	return songURLs
+}
+
+func getSongsFromGamerch() []Song {
+	songs := []Song{}
+
+	songURLs := getSongURLsFromGamerch()
+	for _, url := range songURLs {
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0")
+		req.Header.Set("Referer", "https://gamerch.com/maimai/545589")
+
+		client := &http.Client{}
+		res, err := client.Do(req)
+		if err != nil {
+			panic(err)
+		}
+		defer res.Body.Close()
+
+		if res.StatusCode != http.StatusOK {
+			bodyBytes, err := io.ReadAll(res.Body)
+			if err != nil {
+				log.Fatal(err)
+			}
+			bodyString := string(bodyBytes)
+			log.Println(bodyString)
+		}
+
+		doc, err := goquery.NewDocumentFromReader(res.Body)
+		if err != nil {
+			panic(err)
+		}
+
+		genre := doc.Find(".mu__table--row2 .mu__table--col3").First().Text()
+		title := doc.Find(".mu__table--row3 .mu__table--col3").First().Text()
+		artist := doc.Find(".mu__table--row4 .mu__table--col3").First().Text()
+		bpm := doc.Find(".mu__table--row5 .mu__table--col3").First().Text()
+		releaseDate := doc.Find(".mu__table--row6 .mu__table--col3").First().Text()
+		version := doc.Find(".mu__table--row7 .mu__table--col3").First().Text()
+
+		song := Song{
+			Title:       title,
+			Artist:      artist,
+			BPM:         bpm,
+			Genre:       genre,
+			Version:     version,
+			ReleaseDate: releaseDate,
+		}
+		songs = append(songs, song)
+		fmt.Println(len(songs), "/", len(songURLs))
+		time.Sleep(time.Second)
+	}
+	return songs
 }
 
 func getSongsFromDB() []Song {
