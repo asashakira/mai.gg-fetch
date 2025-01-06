@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,7 +30,7 @@ type Beatmap struct {
 	NoteDesigner  string `json:"noteDesigner"`
 	MaxDxScore    int32  `json:"maxDxScore"`
 	PlayCount     int32  `json:"playCount"`
-	Version       string `json:"version"`
+	IsValid       bool   `json:"isValid"`
 	LastPlayedAt  string `json:"lastPlayedAt"`
 }
 
@@ -40,98 +40,156 @@ func printBeatmaps(beatmap []Beatmap) {
 	}
 }
 
-func getBeatmapDataFromLocal() []Beatmap {
+func parseDifficulty(s string) (string, error) {
+	colorToDifficulty := map[string]string{
+		"#00ced1": "easy",
+		"#98fb98": "basic",
+		"#ffa500": "advanced",
+		"#fa8080": "expert",
+		"#ee82ee": "master",
+		"#ffceff": "re:master",
+		"#ff5296": "utage",
+	}
+
+	re := regexp.MustCompile(`background-color:(#[0-9a-f]+)`)
+	match := re.FindStringSubmatch(s)
+	if len(match) < 2 {
+		return "", fmt.Errorf("failed to parse difficulty")
+	}
+	color := match[1]
+	return colorToDifficulty[color], nil
+}
+
+func parseBeatmapRow(row *goquery.Selection, hasInternalLevel bool, beatmapType string) (Beatmap, error) {
+	var beatmap Beatmap
+	columns := []string{"level", "internalLevel", "totalNotes", "Tap", "Hold", "Slide", "Touch", "Break"}
+	current := row.Find("th")
+	for i := 0; i < len(columns); i++ {
+		switch i {
+		case 0: // Level
+			beatmap.Level = current.Text()
+		case 1: // 譜面定数
+			// なければスキップ
+			if !hasInternalLevel {
+				continue
+			}
+			beatmap.InternalLevel = current.Text()
+			if current.Text() == "" {
+				beatmap.InternalLevel = "-"
+			}
+		case 2: // 総数
+			beatmap.TotalNotes = convertStringToInt32(current.Text())
+		case 3: // Tap
+			beatmap.Tap = convertStringToInt32(current.Text())
+		case 4: // Hold
+			beatmap.Hold = convertStringToInt32(current.Text())
+		case 5: // Slide
+			beatmap.Slide = convertStringToInt32(current.Text())
+		case 6: // Touch
+			// standard譜面にはtouchない
+			if beatmapType == "std" {
+				continue
+			}
+			beatmap.Touch = convertStringToInt32(current.Text())
+		case 7: // Break
+			beatmap.Break = convertStringToInt32(current.Text())
+		}
+		current = current.Next()
+	}
+
+	beatmap.Difficulty, _ = parseDifficulty(row.Find("th").AttrOr("style", "yo what's up"))
+	beatmap.Type = beatmapType
+	beatmap.NoteDesigner = "?"
+	beatmap.MaxDxScore = beatmap.TotalNotes * 3
+	beatmap.PlayCount = -1
+	beatmap.IsValid = true
+
+	// beatmap validation
+	isValidBeatmap := beatmap.TotalNotes > 0
+	if !isValidBeatmap {
+		beatmap.IsValid = false
+		// return beatmap, fmt.Errorf("bad beatmap")
+	}
+
+	return beatmap, nil
+}
+
+func parseDocument(doc *goquery.Document) ([]Beatmap, error) {
+	var beatmaps []Beatmap
+	var songName string
+	doc.Find("table").Each(func(j int, s *goquery.Selection) {
+		// check top left cell to determine which table
+		topLeftCell := s.Find(".mu__table--row1 .mu__table--col1").Text()
+
+		// 基本データ
+		if topLeftCell == "" && j == 0 {
+			// TODO: get song data
+			songName = s.Find(".mu__table--row3 .mu__table--col3").Text()
+			return
+		}
+
+		// 譜面データ
+		if topLeftCell == "Lv" {
+			// check for missing columns
+			tableHeader := s.Find("thead th").Text()
+			hasInternalLevel := strings.Contains(tableHeader, "定数")
+			beatmapType := "std"
+			if strings.Contains(tableHeader, "Touch") {
+				// has touch notes -> dx beatmap
+				beatmapType = "dx"
+			}
+
+			// parse each row
+			// each row represents beatmap difficulty
+			s.Find("tbody tr").Each(func(j int, row *goquery.Selection) {
+				beatmap, err := parseBeatmapRow(row, hasInternalLevel, beatmapType)
+				if err != nil {
+					// skip append on error
+					log.Printf("%v %v: ", err, songName)
+					return
+				}
+				if beatmap.Difficulty == "" || beatmap.Difficulty == "easy" || beatmap.Difficulty == "utage" {
+					// skip easy and utage maps
+					// TODO: support utage maps
+					return
+				}
+				beatmap.SongID = songName
+				beatmaps = append(beatmaps, beatmap)
+			})
+		}
+	})
+	return beatmaps, nil
+}
+
+func getBeatmapsFromLocal() ([]Beatmap, error) {
 	beatmaps := []Beatmap{}
 
-	// for i := 0; i < 1437; i++ {
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 1437; i++ {
 		f, err := os.Open(fmt.Sprintf("html/%v.html", i+1))
-		check(err)
+		if err != nil {
+			return nil, err
+		}
 		defer f.Close()
 
 		doc, err := goquery.NewDocumentFromReader(f)
-		check(err)
+		if err != nil {
+			return nil, err
+		}
 
-		doc.Find("table").Each(func(j int, s *goquery.Selection) {
-			// check top left cell to determine which table
-			topLeftCell := s.Find(".mu__table--row1 .mu__table--col1").Text()
+		beatmapSet, err := parseDocument(doc)
+		if err != nil {
+			return nil, err
+		}
 
-			// 基本データ
-			if topLeftCell == "" && j == 0 {
-				s.Find(".mu__table--row2 .mu__table--col2").Text()
-				return
-			}
-
-			// 譜面データ
-			if topLeftCell == "Lv" {
-				// 定数あるか
-				hasInternalLevel := strings.Contains(s.Find("thead th").Text(), "定数")
-
-				// dx or std
-				beatmapType := "std"
-				if strings.Contains(s.Find("thead th").Text(), "Touch") {
-					beatmapType = "dx"
-				}
-				s.Find("tbody tr").Each(func(j int, s *goquery.Selection) {
-					beatmap := Beatmap{}
-					col := []string{"level", "internalLevel", "totalNotes", "Tap", "Hold", "Slide", "Tap", "Break"}
-					now := s.Find("th")
-					for k := 0; k < len(col); k++ {
-						switch k {
-						case 0: // Level
-							beatmap.Level = now.Text()
-						case 1: // 譜面定数
-							if !hasInternalLevel {
-								continue
-							}
-							beatmap.InternalLevel = now.Text()
-						case 2: // 総数
-							tap, err := strconv.Atoi(now.Text())
-							check(err)
-							beatmap.Tap = int32(tap)
-						case 3: // Tap
-							tap, err := strconv.Atoi(now.Text())
-							check(err)
-							beatmap.Tap = int32(tap)
-						case 4: // Hold
-							hold, err := strconv.Atoi(now.Text())
-							check(err)
-							beatmap.Hold = int32(hold)
-						case 5: // Slide
-							slide, err := strconv.Atoi(now.Text())
-							check(err)
-							beatmap.Slide = int32(slide)
-						case 6: // Touch
-							if beatmapType == "std" {
-								continue
-							}
-							touch, err := strconv.Atoi(now.Text())
-							check(err)
-							beatmap.Touch = int32(touch)
-						case 7: // Break
-							slide, err := strconv.Atoi(now.Text())
-							check(err)
-							beatmap.Break = int32(slide)
-						}
-						now = now.Next()
-					}
-					beatmaps = append(beatmaps, beatmap)
-				})
-			}
-		})
+		beatmaps = append(beatmaps, beatmapSet...)
 	}
-	return beatmaps
+	return beatmaps, nil
 }
 
-func getBeatmapDataFromGamerch() []Beatmap {
+func getBeatmapsFromGamerch() ([]Beatmap, error) {
 	beatmaps := []Beatmap{}
 
 	// songURLs := getSongURLsFromGamerch()
-	// シンフォ
-	// oshama
-	// ジャガー
-	// True
-	// ブリキ
 	songURLs := []string{"https://gamerch.com/maimai/533866", "https://gamerch.com/maimai/533541", "https://gamerch.com/maimai/533652", "https://gamerch.com/maimai/534105", "https://gamerch.com/maimai/533417"}
 	for _, url := range songURLs {
 		req, _ := http.NewRequest("GET", url, nil)
@@ -142,41 +200,41 @@ func getBeatmapDataFromGamerch() []Beatmap {
 		client := &http.Client{}
 		res, err := client.Do(req)
 		if err != nil {
-			panic(err)
+			// FIXME: error message
+			return nil, fmt.Errorf("%v", err)
 		}
 		defer res.Body.Close()
 
 		if res.StatusCode != http.StatusOK {
 			bodyBytes, err := io.ReadAll(res.Body)
 			if err != nil {
-				log.Fatal(err)
+				// FIXME: error message
+				return nil, fmt.Errorf("%v", err)
 			}
 			bodyString := string(bodyBytes)
-			log.Println(bodyString)
+			log.Fatal(bodyString)
 		}
 
 		doc, err := goquery.NewDocumentFromReader(res.Body)
 		if err != nil {
-			panic(err)
+			// FIXME: error message
+			return nil, fmt.Errorf("%v", err)
 		}
-		doc.Find(".mu__table").Each(func(i int, s *goquery.Selection) {
-			innerHTML, _ := s.Html()
-			fmt.Println(innerHTML)
-		})
-		fmt.Println()
 
-		// でらっくす譜面チェック
-		// noteType := doc.Find(".mu__table--row2 .mu__table--col7").First().Text()
-		// fmt.Println(noteType)
+		beatmapSet, err := parseDocument(doc)
+		if err != nil {
+			// FIXME: error message
+			return nil, fmt.Errorf("%v", err)
+		}
 
-		beatmap := Beatmap{}
-		beatmaps = append(beatmaps, beatmap)
+		beatmaps = append(beatmaps, beatmapSet...)
+
 		time.Sleep(time.Second)
 	}
-	return beatmaps
+	return beatmaps, nil
 }
 
-func getBeatmapsFromDB() []Beatmap {
+func getBeatmapsFromDB() ([]Beatmap, error) {
 	dbURL := "http://localhost:8080/v1/beatmaps"
 	req, _ := http.NewRequest("GET", dbURL, nil)
 	req.Header.Set("Content-Type", "application/json")
@@ -201,7 +259,7 @@ func getBeatmapsFromDB() []Beatmap {
 		fmt.Println(beatmap.Difficulty)
 	}
 
-	return beatmaps
+	return beatmaps, nil
 }
 
 func saveBeatmapsToDB(beatmaps []Beatmap) {
