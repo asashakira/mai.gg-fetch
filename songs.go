@@ -1,256 +1,127 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
-	"time"
-
-	"github.com/PuerkitoBio/goquery"
-	"github.com/joho/godotenv"
+	"strings"
 )
 
 type Song struct {
+	SongID      string `json:"songID"`
+	AltKey      string `json:"altkey"`
 	Title       string `json:"title"`
 	Artist      string `json:"artist"`
 	Genre       string `json:"genre"`
-	BPM         string `json:"bpm"`
-	ImageURL    string `json:"imageURL"`
+	Bpm         string `json:"bpm"`
+	ImageUrl    string `json:"imageUrl"`
 	Version     string `json:"version"`
+	IsUtage     bool   `json:"isUtage"`
+	IsAvailable bool   `json:"isAvailable"`
 	ReleaseDate string `json:"releaseDate"`
+	DeleteDate  string `json:"deleteDate"`
+}
+
+func (s *Song) Format() {
+	s.Title = removeNote(s.Title)
+	s.Artist = removeNote(s.Artist)
+	s.Genre = removeNote(s.Genre)
+	s.ReleaseDate = removeNote(s.ReleaseDate)
+	s.ReleaseDate = formatDate(s.ReleaseDate)
+	s.DeleteDate = removeNote(s.DeleteDate)
+	s.DeleteDate = formatDate(s.DeleteDate)
+
+	s.AltKey = createAltKey(s.Title, s.Artist)
+}
+
+func syncSongs() {
+	songs, err := fetchSongsFromAPI()
+	check(err)
+	for _, song := range songs {
+		_, err := syncSong(song)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
+func syncSong(song Song) (Song, error) {
+	_, err := getSongFromDB(song.Title, song.Artist)
+	if err == nil {
+		// song already exists
+		return Song{}, nil
+	}
+
+	if strings.Contains(err.Error(), "not found") {
+		// create new song if it does not exist in DB
+		_, saveErr := saveSongToDB(song)
+		if saveErr != nil {
+			return Song{}, fmt.Errorf("failed to save song: '%v' %w", song.Title, saveErr)
+		}
+		return Song{}, nil
+	}
+
+	return Song{}, fmt.Errorf("failed to get song: %w", err)
 }
 
 func printSongs(songs []Song) {
 	for _, song := range songs {
-		fmt.Println("Title:", song.Title)
-		fmt.Println("Artist:", song.Artist)
-		fmt.Println("Genre:", song.Genre)
-		fmt.Println("Bpm:", song.BPM)
-		fmt.Println("ImageURL:", song.ImageURL)
-		fmt.Println()
+		printSong(song)
 	}
 }
 
-func getSongsFromAPI() []Song {
-	apiURL := "https://maimai.sega.jp/data/maimai_songs.json"
-	req, _ := http.NewRequest("GET", apiURL, nil)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0")
-
-	client := &http.Client{}
-	r, err := client.Do(req)
-	if err != nil {
-		panic(err)
-	}
-	defer r.Body.Close()
-
-	type parameters struct {
-		Artist   string `json:"artist"`
-		CatCode  string `json:"catcode"`
-		Title    string `json:"title"`
-		ImageURL string `json:"image_url"`
-	}
-	decoder := json.NewDecoder(r.Body)
-	params := []parameters{}
-	decoder.Decode(&params)
-
-	songs := []Song{}
-	for _, p := range params {
-		song := Song{
-			Title:    p.Title,
-			Artist:   p.Artist,
-			Genre:    p.CatCode,
-			ImageURL: "https://maimaidx.jp/maimai-mobile/img/Music/" + p.ImageURL,
-		}
-		songs = append(songs, song)
-	}
-
-	return songs
+func printSong(song Song) {
+	fmt.Println("SongID:  ", song.SongID)
+	fmt.Println("Title:   ", song.Title)
+	fmt.Println("Artist:  ", song.Artist)
+	fmt.Println("Genre:   ", song.Genre)
+	fmt.Println("Bpm:     ", song.Bpm)
+	fmt.Println("ImageURL:", song.ImageUrl)
+	fmt.Println("Version: ", song.Version)
+	fmt.Println("RelDate: ", song.ReleaseDate)
+	fmt.Println()
 }
 
-func scrapeSongsFromMaimaiDxNet() []Song {
-	godotenv.Load(".env")
-
-	segaID := os.Getenv("SEGA_ID")
-	password := os.Getenv("PASSWORD")
-	m := New()
-	err := m.Login(segaID, password)
+func dumpSongsAsJson(songs []Song) error {
+	jsonByte, err := json.Marshal(songs)
 	if err != nil {
-		log.Println("maimai Login error: ", err)
-		panic(err)
+		return err
 	}
 
-	res, err := m.HTTPClient.Get(maimaiURL + "/record/musicGenre/search/?genre=99&diff=3")
+	// write to file
+	os.MkdirAll("./tmp/json/", os.ModePerm)
+	err = os.WriteFile("./tmp/json/songs.json", jsonByte, 0666)
 	if err != nil {
-		log.Println("GET error: ", err)
-		panic(err)
+		return err
 	}
-	defer res.Body.Close()
-
-	doc, err := goquery.NewDocumentFromReader(res.Body)
-	if err != nil {
-		panic(err)
-	}
-
-	songs := []Song{}
-	doc.Find(".music_master_score_back").Each(func(i int, s *goquery.Selection) {
-		title := s.Find(".music_name_block").Text()
-		song := Song{
-			Title:    title,
-			Artist:   "",
-			Genre:    "",
-			BPM:      "?",
-			ImageURL: "",
-		}
-		songs = append(songs, song)
-	})
-
-	return songs
+	return nil
 }
 
-func getSongURLsFromGamerch() []string {
-	url := "https://gamerch.com/maimai/545589"
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0")
-
-	client := &http.Client{}
-	res, err := client.Do(req)
-	if err != nil {
-		panic(err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		bodyBytes, err := io.ReadAll(res.Body)
-		if err != nil {
-			log.Fatal(err)
-		}
-		bodyString := string(bodyBytes)
-		log.Println(bodyString)
-	}
-
-	doc, err := goquery.NewDocumentFromReader(res.Body)
-	if err != nil {
-		panic(err)
-	}
-
-	var songURLs []string
-	doc.Find(".markup.mu .mu__list--1").Each(func(i int, s *goquery.Selection) {
-		url := s.Find("a").AttrOr("href", "hohoho")
-		songURLs = append(songURLs, url)
-	})
-
-	return songURLs
-}
-
-func getSongsFromGamerch() []Song {
-	songs := []Song{}
-
-	songURLs := getSongURLsFromGamerch()
-	for _, url := range songURLs {
-		req, _ := http.NewRequest("GET", url, nil)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0")
-		req.Header.Set("Referer", "https://gamerch.com/maimai/545589")
-
-		client := &http.Client{}
-		res, err := client.Do(req)
-		if err != nil {
-			panic(err)
-		}
-		defer res.Body.Close()
-
-		if res.StatusCode != http.StatusOK {
-			bodyBytes, err := io.ReadAll(res.Body)
-			if err != nil {
-				log.Fatal(err)
-			}
-			bodyString := string(bodyBytes)
-			log.Println(bodyString)
-		}
-
-		doc, err := goquery.NewDocumentFromReader(res.Body)
-		if err != nil {
-			panic(err)
-		}
-
-		genre := doc.Find(".mu__table--row2 .mu__table--col3").First().Text()
-		title := doc.Find(".mu__table--row3 .mu__table--col3").First().Text()
-		artist := doc.Find(".mu__table--row4 .mu__table--col3").First().Text()
-		bpm := doc.Find(".mu__table--row5 .mu__table--col3").First().Text()
-		releaseDate := doc.Find(".mu__table--row6 .mu__table--col3").First().Text()
-		version := doc.Find(".mu__table--row7 .mu__table--col3").First().Text()
-
-		song := Song{
-			Title:       title,
-			Artist:      artist,
-			BPM:         bpm,
-			Genre:       genre,
-			Version:     version,
-			ReleaseDate: releaseDate,
-		}
-		songs = append(songs, song)
-		fmt.Println(len(songs), "/", len(songURLs))
-		time.Sleep(time.Second)
-	}
-	return songs
-}
-
-func getSongsFromDB() []Song {
-	dbURL := "http://localhost:8080/v1/songs"
-	req, _ := http.NewRequest("GET", dbURL, nil)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		panic(err)
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-	bodyString := string(bodyBytes)
-	log.Println(bodyString)
-
-	songs := []Song{}
-	json.Unmarshal(bodyBytes, &songs)
-	for _, song := range songs {
-		fmt.Println(song.Title)
-	}
-
-	return songs
-}
-
-func saveSongsToDB(songs []Song) {
-	// save to db
-	dbURL := "http://localhost:8080/v1/songs"
-	for _, song := range songs {
-		jsonStr, _ := json.Marshal(song)
-		req, _ := http.NewRequest("POST", dbURL, bytes.NewBuffer(jsonStr))
-		req.Header.Set("Content-Type", "application/json")
-
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-			panic(err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			bodyBytes, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatal(err)
-			}
-			bodyString := string(bodyBytes)
-			log.Println(song.Title, bodyString)
-		}
-	}
+var versionMap = map[string]string{
+	"000": "",
+	"100": "maimai",
+	"110": "maimai PLUS",
+	"120": "GreeN",
+	"130": "GreeN PLUS",
+	"140": "ORANGE",
+	"150": "ORANGE PLUS",
+	"160": "PiNK",
+	"170": "PiNK PLUS",
+	"180": "MURASAKi",
+	"185": "MURASAKi PLUS",
+	"190": "MiLK",
+	"195": "MiLK PLUS",
+	"199": "FiNALE",
+	"200": "maimaiでらっくす",
+	"205": "maimaiでらっくす PLUS",
+	"210": "Splash",
+	"215": "Splash PLUS",
+	"220": "UNiVERSE",
+	"225": "UNiVERSE PLUS",
+	"230": "FESTiVAL",
+	"235": "FESTiVAL PLUS",
+	"240": "BUDDiES",
+	"245": "BUDDiES PLUS",
+	"250": "PRiSM",
 }
