@@ -12,15 +12,18 @@ import (
 
 func scrapeGamerch() ([]Song, []Beatmap, error) {
 	dir := "./tmp/html/"
+
+	// get song urls from gamerch
 	songURLs, fetchSongErr := fetchSongURLsFromGamerch()
 	if fetchSongErr != nil {
 		return []Song{}, []Beatmap{}, fmt.Errorf("%w", fetchSongErr)
 	}
+
+	// if ./tmp/html/ doesn't exist, get them
 	exists, err := dirExists(dir)
 	if err != nil {
 		return []Song{}, []Beatmap{}, fmt.Errorf("%w", err)
 	}
-
 	if !exists {
 		err = saveGamerchHTML(songURLs)
 		if err != nil {
@@ -28,6 +31,7 @@ func scrapeGamerch() ([]Song, []Beatmap, error) {
 		}
 	}
 
+	// actually scrape
 	songs := []Song{}
 	beatmaps := []Beatmap{}
 	for i := range songURLs {
@@ -132,6 +136,7 @@ func parseSongTable(table *goquery.Selection) (Song, error) {
 	version := table.Find(".mu__table--row7 .mu__table--col3").Text()
 	image_url := ""
 
+	// ignore everything after release date
 	releaseDate = getFromString(releaseDate, `^[/0-9]+`)
 
 	song := Song{
@@ -148,6 +153,7 @@ func parseSongTable(table *goquery.Selection) (Song, error) {
 	return song, nil
 }
 
+// parse each row of beatmaps table
 func parseBeatmapRow(row *goquery.Selection, hasInternalLevel bool, beatmapType string) (Beatmap, error) {
 	var beatmap Beatmap
 	columns := []string{"level", "internalLevel", "totalNotes", "Tap", "Hold", "Slide", "Touch", "Break"}
