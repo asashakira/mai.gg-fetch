@@ -3,10 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 
 	"github.com/PuerkitoBio/goquery"
@@ -15,14 +13,18 @@ import (
 
 func fetchSongURLsFromGamerch() ([]string, error) {
 	songListURL := "https://gamerch.com/maimai/545589"
-	doc, err := loadDocument(songListURL)
+	doc, err := fetchDocumentWithRetry(songListURL)
 	if err != nil {
 		return nil, err
 	}
 
 	var songURLs []string
 	doc.Find(".markup.mu .mu__list--1").Each(func(i int, s *goquery.Selection) {
-		url := s.Find("a").AttrOr("href", "hohoho")
+		url, exists := s.Find("a").Attr("href")
+		if !exists {
+			fmt.Printf("Could not find url: %s\n", s.Text())
+			return
+		}
 		songURLs = append(songURLs, url)
 	})
 
@@ -32,7 +34,7 @@ func fetchSongURLsFromGamerch() ([]string, error) {
 // fetch deleted songs title and artist
 func fetchDeletedSongs() ([]Song, error) {
 	deletedSongsList := "https://gamerch.com/maimai/533442"
-	doc, err := loadDocument(deletedSongsList)
+	doc, err := fetchDocumentWithRetry(deletedSongsList)
 	if err != nil {
 		return nil, err
 	}
@@ -160,83 +162,4 @@ func fetchSongsFromMaimaiDxNet() []Song {
 	})
 
 	return songs
-}
-
-func getAllSongsFromDB() ([]Song, error) {
-	dbURL := "http://localhost:8080/v1/songs"
-	req, _ := http.NewRequest("GET", dbURL, nil)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	r, err := client.Do(req)
-	if err != nil {
-		panic(err)
-	}
-	defer r.Body.Close()
-
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		return []Song{}, err
-	}
-
-	if r.StatusCode != http.StatusOK {
-		bodyString := string(bodyBytes)
-		return []Song{}, fmt.Errorf("%v", bodyString)
-	}
-
-	songs := []Song{}
-	json.Unmarshal(bodyBytes, &songs)
-
-	return songs, nil
-}
-
-// get song from DB using altkey
-func getSongFromDB(title, artist string) (Song, error) {
-	// Define the URL
-	altkey := createAltKey(title, artist)
-	dbURL := fmt.Sprintf("http://localhost:8080/v1/songs/by-altkey/%s", url.QueryEscape(altkey))
-	err := validateURL(dbURL)
-	if err != nil {
-		return Song{}, fmt.Errorf("invalid url: %w", err)
-	}
-
-	// Create new HTTP request
-	req, err := http.NewRequest("GET", dbURL, nil)
-	if err != nil {
-		return Song{}, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	// Perform request
-	client := &http.Client{}
-	r, err := client.Do(req)
-	// log.Println("GET", dbURL)
-	if err != nil {
-		return Song{}, fmt.Errorf("request failed: %w", err)
-	}
-	defer r.Body.Close()
-
-	// Read and process reponse body
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		return Song{}, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// handle status code
-	switch r.StatusCode {
-	case http.StatusOK:
-		// parse response json
-		song := Song{}
-		if err := json.Unmarshal(bodyBytes, &song); err != nil {
-			return Song{}, fmt.Errorf("failed to unmarshal JSON: %w", err)
-		}
-		return song, nil
-
-	case http.StatusNotFound:
-		// Song not found in the database
-		return Song{}, fmt.Errorf("song with title '%s' not found", title)
-
-	default:
-		return Song{}, fmt.Errorf("error from server (status %d): %s", r.StatusCode, string(bodyBytes))
-	}
 }

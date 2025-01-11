@@ -3,66 +3,35 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
-	"strings"
 )
 
 type Song struct {
-	SongID      string `json:"songID"`
-	AltKey      string `json:"altkey"`
-	Title       string `json:"title"`
-	Artist      string `json:"artist"`
-	Genre       string `json:"genre"`
-	Bpm         string `json:"bpm"`
-	ImageUrl    string `json:"imageUrl"`
-	Version     string `json:"version"`
-	IsUtage     bool   `json:"isUtage"`
-	IsAvailable bool   `json:"isAvailable"`
-	ReleaseDate string `json:"releaseDate"`
-	DeleteDate  string `json:"deleteDate"`
+	SongID      string `json:"songID,omitempty"`
+	AltKey      string `json:"altkey,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Artist      string `json:"artist,omitempty"`
+	Genre       string `json:"genre,omitempty"`
+	Bpm         string `json:"bpm,omitempty"`
+	ImageUrl    string `json:"imageUrl,omitempty"`
+	Version     string `json:"version,omitempty"`
+	IsUtage     bool   `json:"isUtage,omitempty"`
+	IsAvailable bool   `json:"isAvailable,omitempty"`
+	ReleaseDate string `json:"releaseDate,omitempty"`
+	DeleteDate  string `json:"deleteDate,omitempty"`
 }
 
 func (s *Song) Format() {
 	s.Title = removeNote(s.Title)
 	s.Artist = removeNote(s.Artist)
 	s.Genre = removeNote(s.Genre)
+	s.Bpm = removeNote(s.Bpm)
 	s.ReleaseDate = removeNote(s.ReleaseDate)
 	s.ReleaseDate = formatDate(s.ReleaseDate)
 	s.DeleteDate = removeNote(s.DeleteDate)
 	s.DeleteDate = formatDate(s.DeleteDate)
 
 	s.AltKey = createAltKey(s.Title, s.Artist)
-}
-
-func syncSongs() {
-	songs, err := fetchSongsFromAPI()
-	check(err)
-	for _, song := range songs {
-		_, err := syncSong(song)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-}
-
-func syncSong(song Song) (Song, error) {
-	_, err := getSongFromDB(song.Title, song.Artist)
-	if err == nil {
-		// song already exists
-		return Song{}, nil
-	}
-
-	if strings.Contains(err.Error(), "not found") {
-		// create new song if it does not exist in DB
-		_, saveErr := saveSongToDB(song)
-		if saveErr != nil {
-			return Song{}, fmt.Errorf("failed to save song: '%v' %w", song.Title, saveErr)
-		}
-		return Song{}, nil
-	}
-
-	return Song{}, fmt.Errorf("failed to get song: %w", err)
 }
 
 func printSongs(songs []Song) {

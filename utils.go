@@ -3,15 +3,14 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -23,36 +22,52 @@ func check(e error) {
 	}
 }
 
-func loadDocument(url string) (*goquery.Document, error) {
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0")
-	req.Header.Set("Referer", "https://gamerch.com/maimai/545589")
+func fetchDocumentWithRetry(url string) (*goquery.Document, error) {
+	for {
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0")
+		req.Header.Set("Referer", "https://gamerch.com/maimai/545589")
 
-	client := &http.Client{}
-	res, err := client.Do(req)
-	if err != nil {
-		// FIXME: error message
-		return nil, fmt.Errorf("%v", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		bodyBytes, err := io.ReadAll(res.Body)
+		client := &http.Client{}
+		res, err := client.Do(req)
 		if err != nil {
-			// FIXME: error message
-			return nil, fmt.Errorf("%v", err)
+			return nil, fmt.Errorf("request failed: %w", err)
 		}
-		bodyString := string(bodyBytes)
-		log.Fatal(bodyString)
+		defer res.Body.Close()
+
+		switch res.StatusCode {
+		case http.StatusOK:
+			return goquery.NewDocumentFromReader(res.Body)
+		default:
+			// bodyBytes, err := io.ReadAll(res.Body)
+			// if err != nil {
+			// 	return nil, fmt.Errorf("error reading the body: %w", err)
+			// }
+			retryAfter := 30 * time.Second
+			fmt.Printf("error code %d: retrying after %s seconds\n", res.StatusCode, retryAfter)
+
+			// wait to not get ip blocked
+			time.Sleep(retryAfter)
+		}
 	}
-	return goquery.NewDocumentFromReader(res.Body)
 }
 
-func loadHTML(filePath string) (*goquery.Document, error) {
+func saveHTMLToFile(html, directory, filename string) error {
+	// write to file
+	os.MkdirAll(directory, os.ModePerm)
+	err := os.WriteFile(directory+filename, []byte(html), 0666)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func loadHTMLDocument(filePath string) (*goquery.Document, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open %s: %w", filePath, err)
 	}
 	defer f.Close()
 	return goquery.NewDocumentFromReader(f)
@@ -72,6 +87,8 @@ func convertStringToInt32(s string) int32 {
 	return int32(result)
 }
 
+// remove *n where n is an integer
+// xd
 func removeNote(s string) string {
 	if strings.Contains(s, "*27") { // DECO*27
 		return s
@@ -117,17 +134,6 @@ func validateURL(input string) error {
 	return nil
 }
 
-func saveHTML(html, directory, filename string) error {
-	// write to file
-	os.MkdirAll(directory, os.ModePerm)
-	err := os.WriteFile(fmt.Sprintf("%s%s", directory, filename), []byte(html), 0666)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func dirExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
@@ -137,4 +143,22 @@ func dirExists(path string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+// fileExists checks if a file exists and is not a directory
+func fileExists(filepath string) (bool, error) {
+	info, err := os.Stat(filepath)
+	if err == nil {
+		// exists
+		return !info.IsDir(), nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
+}
+
+func makeFilenameFromURL(url string) string {
+	s := removeFromString(url, `https://gamerch.com/maimai/`)
+	return s + ".html"
 }
