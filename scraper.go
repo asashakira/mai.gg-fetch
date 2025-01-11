@@ -20,7 +20,7 @@ func scrapeGamerch() ([]Song, []Beatmap, error) {
 	// actually scrape
 	songs := []Song{}
 	beatmaps := []Beatmap{}
-	for i, url := range songURLs {
+	for _, url := range songURLs {
 		song, beatmapSet, err := scrapePage(url)
 		if err != nil {
 			return []Song{}, []Beatmap{}, fmt.Errorf("%w", err)
@@ -29,7 +29,7 @@ func scrapeGamerch() ([]Song, []Beatmap, error) {
 		beatmaps = append(beatmaps, beatmapSet...)
 
 		// progress
-		fmt.Println(i+1, "/", len(songURLs))
+		// fmt.Println(i+1, "/", len(songURLs))
 	}
 	return songs, beatmaps, nil
 }
@@ -64,8 +64,7 @@ func scrapePage(url string) (Song, []Beatmap, error) {
 	// load page as goquery.Document
 	doc, err := loadHTMLDocument(filepath)
 	if err != nil {
-		fmt.Println(err)
-		// return []Song{}, []Beatmap{}, fmt.Errorf("%w", err)
+		return Song{}, []Beatmap{}, fmt.Errorf("%w", err)
 	}
 
 	song, beatmapSet, err := parseGamerchData(doc)
@@ -195,7 +194,7 @@ func parseBeatmapRow(row *goquery.Selection, hasInternalLevel bool, beatmapType 
 		case 0: // Level
 			beatmap.Level = current.Text()
 		case 1: // 譜面定数
-			if !hasInternalLevel {     // 定数列がなければskip
+			if !hasInternalLevel { // 定数列がなければskip
 				continue
 			}
 			// 定数列があっても空だったら無視

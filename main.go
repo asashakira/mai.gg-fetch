@@ -29,7 +29,6 @@ func run() {
 
 	// upsert songs
 	log.Println("upsert songs to db...")
-	dumpSongsAsJson(songs)
 	for _, song := range songs {
 		_, upsertErr := upsertSong(song)
 		if upsertErr != nil {
@@ -40,7 +39,6 @@ func run() {
 
 	// save beatmaps to db
 	log.Println("insert beatmaps to db...")
-	dumpBeatmapsAsJson(beatmaps)
 	for _, beatmap := range beatmaps {
 		_, insertErr := upsertBeatmap(beatmap)
 		if insertErr != nil {
