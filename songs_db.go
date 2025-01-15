@@ -13,7 +13,7 @@ import (
 // insert to db if song doesn't exist
 // if not update the song with given fields
 func upsertSong(song Song) (Song, error) {
-	dbsong, err := getSongFromDB(song.Title, song.Artist)
+	dbsong, err := getSongByAltKey(song.Title, song.Artist)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			// insert if it does not exist in DB
@@ -120,7 +120,8 @@ func getSongsByTitle(title string) ([]Song, error) {
 }
 
 // get song from DB using altkey
-func getSongFromDB(title, artist string) (Song, error) {
+// returns one song
+func getSongByAltKey(title, artist string) (Song, error) {
 	// Define the URL
 	altkey := createAltKey(title, artist)
 	dbURL := fmt.Sprintf("http://localhost:8080/v1/songs/by-altkey/%s", url.QueryEscape(altkey))
