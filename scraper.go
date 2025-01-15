@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/schollz/progressbar/v3"
 )
 
 func scrapeGamerch() ([]Song, []Beatmap, error) {
@@ -20,6 +21,7 @@ func scrapeGamerch() ([]Song, []Beatmap, error) {
 	// actually scrape
 	songs := []Song{}
 	beatmaps := []Beatmap{}
+	bar := progressbar.Default(int64(len(songURLs)))
 	for _, url := range songURLs {
 		song, beatmapSet, err := scrapePage(url)
 		if err != nil {
@@ -29,7 +31,7 @@ func scrapeGamerch() ([]Song, []Beatmap, error) {
 		beatmaps = append(beatmaps, beatmapSet...)
 
 		// progress
-		// fmt.Println(i+1, "/", len(songURLs))
+		bar.Add(1)
 	}
 	return songs, beatmaps, nil
 }
@@ -166,7 +168,7 @@ func handleBeatmapTable(table *goquery.Selection, song Song) ([]Beatmap, error) 
 	table.Find("tbody tr").Each(func(j int, row *goquery.Selection) {
 		beatmap, err := parseBeatmapRow(row, hasInternalLevel, beatmapType)
 		if err != nil {
-			log.Printf("parse beatmap row error for song '%s': %v", song.Title, err)
+			// log.Printf("parse beatmap row error for song '%s': %v", song.Title, err)
 			return
 		}
 

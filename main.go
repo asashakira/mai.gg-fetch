@@ -16,34 +16,34 @@ func run() {
 	for _, song := range apiSongs {
 		_, syncErr := upsertSong(song)
 		if syncErr != nil {
-			log.Println(syncErr)
+			log.Fatal(syncErr)
 		}
 	}
 	log.Println("fetchSongsFromAPI done")
 
 	// scrape songs and beatmaps from gamerch
-	log.Println("scraping gamerch")
+	log.Println("start scraping gamerch")
 	songs, beatmaps, scrapeGamerchErr := scrapeGamerch()
 	check(scrapeGamerchErr)
-	log.Println("done")
+	log.Println("scraping gamerch done")
 
 	// upsert songs
 	log.Println("upsert songs to db...")
 	for _, song := range songs {
 		_, upsertErr := upsertSong(song)
 		if upsertErr != nil {
-			log.Println(upsertErr)
+			log.Fatal(upsertErr)
 		}
 	}
-	log.Println("done")
+	log.Println("upsert songs done")
 
 	// save beatmaps to db
 	log.Println("insert beatmaps to db...")
 	for _, beatmap := range beatmaps {
 		_, insertErr := upsertBeatmap(beatmap)
 		if insertErr != nil {
-			log.Println(insertErr)
+			log.Fatal(insertErr)
 		}
 	}
-	log.Println("done")
+	log.Println("insert beatmaps done")
 }
