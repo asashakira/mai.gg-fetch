@@ -8,55 +8,58 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/asashakira/mai.gg-fetcher/beatmap"
+	"github.com/asashakira/mai.gg-fetcher/song"
+	"github.com/asashakira/mai.gg-fetcher/utils"
 	"github.com/schollz/progressbar/v3"
 )
 
-func scrapeGamerch() ([]Song, []Beatmap, error) {
+func scrapeGamerch() ([]song.Song, []beatmap.Beatmap, error) {
 	// get song urls from gamerch
-	songURLs, fetchSongErr := fetchSongURLsFromGamerch()
+	songURLs, fetchSongErr := song.FetchURLsFromGamerch()
 	if fetchSongErr != nil {
-		return []Song{}, []Beatmap{}, fmt.Errorf("%w", fetchSongErr)
+		return []song.Song{}, []beatmap.Beatmap{}, fmt.Errorf("%w", fetchSongErr)
 	}
 
 	// actually scrape
-	songs := []Song{}
-	beatmaps := []Beatmap{}
 	bar := progressbar.Default(int64(len(songURLs)))
+	songs := []song.Song{}
+	beatmaps := []beatmap.Beatmap{}
 	for _, url := range songURLs {
-		song, beatmapSet, err := scrapePage(url)
+		s, beatmapSet, err := scrapePage(url)
 		if err != nil {
-			return []Song{}, []Beatmap{}, fmt.Errorf("%w", err)
+			return []song.Song{}, []beatmap.Beatmap{}, fmt.Errorf("%w", err)
 		}
-		songs = append(songs, song)
+		songs = append(songs, s)
 		beatmaps = append(beatmaps, beatmapSet...)
 
-		// progress
+		// +1 progress
 		bar.Add(1)
 	}
 	return songs, beatmaps, nil
 }
 
-func scrapePage(url string) (Song, []Beatmap, error) {
+func scrapePage(url string) (song.Song, []beatmap.Beatmap, error) {
 	// check if local file exists
-	filename := makeFilenameFromURL(url)
+	filename := utils.RemoveFromString(url, "https://gamerch.com/maimai/") + ".html"
 	directory := "./tmp/html/"
 	filepath := directory + filename
-	exists, err := fileExists(filepath)
+	exists, err := utils.FileExists(filepath)
 	if err != nil {
-		return Song{}, []Beatmap{}, fmt.Errorf("%w", err)
+		return song.Song{}, []beatmap.Beatmap{}, fmt.Errorf("%w", err)
 	}
 	// if not, get it
 	if !exists {
 		// load gamerch song page then save to ./tmp/html/
-		doc, err := fetchDocumentWithRetry(url)
+		doc, err := utils.FetchDocumentWithRetry(url)
 		if err != nil {
-			return Song{}, []Beatmap{}, fmt.Errorf("%w", err)
+			return song.Song{}, []beatmap.Beatmap{}, fmt.Errorf("%w", err)
 		}
 		html, _ := doc.Find(".markup.mu").Html()
 
-		err = saveHTMLToFile(html, directory, filename)
+		err = utils.SaveHTMLToFile(html, directory, filename)
 		if err != nil {
-			return Song{}, []Beatmap{}, fmt.Errorf("%w", err)
+			return song.Song{}, []beatmap.Beatmap{}, fmt.Errorf("%w", err)
 		}
 
 		// wait to not get ip blocked
@@ -64,24 +67,24 @@ func scrapePage(url string) (Song, []Beatmap, error) {
 	}
 
 	// load page as goquery.Document
-	doc, err := loadHTMLDocument(filepath)
+	doc, err := utils.LoadHTMLDocument(filepath)
 	if err != nil {
-		return Song{}, []Beatmap{}, fmt.Errorf("%w", err)
+		return song.Song{}, []beatmap.Beatmap{}, fmt.Errorf("%w", err)
 	}
 
-	song, beatmapSet, err := parseGamerchData(doc)
+	s, beatmapSet, err := parseGamerchData(doc)
 	if err != nil {
-		return Song{}, []Beatmap{}, fmt.Errorf("error parsing page %s: %w", url, err)
+		return song.Song{}, []beatmap.Beatmap{}, fmt.Errorf("error parsing page %s: %w", url, err)
 	}
 
-	return song, beatmapSet, nil
+	return s, beatmapSet, nil
 }
 
 // Parse the HTML Document
 // Each document contains data for a single song with their beatmaps
-func parseGamerchData(doc *goquery.Document) (Song, []Beatmap, error) {
-	var song Song
-	var beatmaps []Beatmap
+func parseGamerchData(doc *goquery.Document) (song.Song, []beatmap.Beatmap, error) {
+	var song song.Song
+	var beatmaps []beatmap.Beatmap
 
 	// parse each table
 	doc.Find("table").Each(func(j int, table *goquery.Selection) {
@@ -91,110 +94,133 @@ func parseGamerchData(doc *goquery.Document) (Song, []Beatmap, error) {
 		switch {
 		// 基本データ(song data table)
 		case topLeftCell == "" && j == 0:
-			parsedSong, err := handleSongTable(table)
+			s, err := handleSongTable(table)
 			if err != nil {
 				log.Printf("handle song table error: %v", err)
 				return
 			}
-			song = parsedSong
+			song = s
 
 		// 譜面データ(beatmap data table)
 		case topLeftCell == "Lv":
-			parsedBeatmaps, err := handleBeatmapTable(table, song)
+			b, err := handleBeatmapTable(table, song)
 			if err != nil {
 				log.Printf("handle beatmap table error: %v", err)
 				return
 			}
-			beatmaps = append(beatmaps, parsedBeatmaps...)
+			beatmaps = append(beatmaps, b...)
 		}
 	})
 
 	return song, beatmaps, nil
 }
 
-func handleSongTable(table *goquery.Selection) (Song, error) {
-	gamerchSong, err := parseSongTable(table)
-	if err != nil {
-		return Song{}, fmt.Errorf("parse song table error: %v", err)
+func handleSongTable(table *goquery.Selection) (song.Song, error) {
+	gamerchSong, parseSongTableErr := parseSongTable(table)
+	if parseSongTableErr != nil {
+		return song.Song{}, fmt.Errorf("parse song table error: %v", parseSongTableErr)
 	}
 
 	// get song from DB for SongID
-	// add if doesn't exist
-	song, syncErr := upsertSong(gamerchSong)
-	if syncErr != nil {
-		return Song{}, fmt.Errorf("failed to upsert song: %w", err)
+	var s song.Song
+	var getSongErr error
+	s, getSongErr = song.GetSongByAltKey(gamerchSong.Title, gamerchSong.Artist)
+	if getSongErr != nil {
+		if strings.Contains(getSongErr.Error(), "not found") {
+			// create new song if it does not exist in DB
+			newSong, insertErr := song.InsertSong(gamerchSong)
+			if insertErr != nil {
+				return song.Song{}, fmt.Errorf("failed to insert song '%v': %w", gamerchSong.Title, insertErr)
+			}
+			return newSong, nil
+		}
+		// other errors
+		return song.Song{}, fmt.Errorf("failed to get song '%v': %w", gamerchSong.Title, getSongErr)
 	}
 
-	return song, nil
+	return s, nil
 }
 
 // parse song table
-func parseSongTable(table *goquery.Selection) (Song, error) {
-	genre := table.Find(".mu__table--row2 .mu__table--col3").Text()
-	title := table.Find(".mu__table--row3 .mu__table--col3").Text()
-	artist := table.Find(".mu__table--row4 .mu__table--col3").Text()
-	bpm := table.Find(".mu__table--row5 .mu__table--col3").Text()
-	releaseDate := table.Find(".mu__table--row6 .mu__table--col3").Text()
-	version := table.Find(".mu__table--row7 .mu__table--col3").Text()
-	image_url := ""
+func parseSongTable(table *goquery.Selection) (song.Song, error) {
+	var genre, title, artist, bpm, releaseDate, deleteDate, version string
+
+	table.Find(`tr`).Each(func(i int, row *goquery.Selection) {
+		header := row.Find(`.mu__table--col2`).Text()
+		switch header {
+		case "ジャンル":
+			genre = row.Find(".mu__table--col3").Text()
+		case "タイトル":
+			title = row.Find(".mu__table--col3").Text()
+		case "アーティスト":
+			artist = row.Find(".mu__table--col3").Text()
+		case "BPM":
+			bpm = row.Find(".mu__table--col3").Text()
+		case "配信日":
+			releaseDate = row.Find(".mu__table--col3").Text()
+		case "削除日":
+			deleteDate = row.Find(".mu__table--col3").Text()
+		case "バージョン":
+			version = row.Find(".mu__table--col3").Text()
+		}
+	})
 
 	// ignore everything after release date
-	releaseDate = getFromString(releaseDate, `^[/0-9]+`)
+	releaseDate = utils.FindFromString(releaseDate, `^[/0-9]+`)
 
-	song := Song{
-		AltKey:      createAltKey(title, artist),
+	s := song.Song{
+		AltKey:      utils.CreateAltKey(title, artist),
 		Title:       title,
 		Artist:      artist,
 		Genre:       genre,
 		Bpm:         bpm,
-		ImageUrl:    image_url,
 		Version:     version,
 		ReleaseDate: releaseDate,
+		DeleteDate:  deleteDate,
 	}
-	song.Format()
-	return song, nil
+	s.Format()
+	return s, nil
 }
 
-func handleBeatmapTable(table *goquery.Selection, song Song) ([]Beatmap, error) {
-	var beatmaps []Beatmap
+func handleBeatmapTable(table *goquery.Selection, s song.Song) ([]beatmap.Beatmap, error) {
+	var beatmaps []beatmap.Beatmap
 
 	// check header for missing data
 	headerText := table.Find("thead th").Text()
 	hasInternalLevel := strings.Contains(headerText, "定数")
-	beatmapType := determineBeatmapType(headerText)
+	beatmapType := utils.DetermineBeatmapType(headerText)
 
 	// parse each row
 	// each table row represents beatmap difficulty
-	table.Find("tbody tr").Each(func(j int, row *goquery.Selection) {
-		beatmap, err := parseBeatmapRow(row, hasInternalLevel, beatmapType)
+	table.Find("tbody tr").Each(func(i int, row *goquery.Selection) {
+		b, err := parseBeatmapRow(row, hasInternalLevel, beatmapType)
 		if err != nil {
-			// log.Printf("parse beatmap row error for song '%s': %v", song.Title, err)
-			return
+			// log.Printf("parse beatmap row error for song '%s': %v", s.Title, err)
 		}
 
-		if beatmap.Difficulty == "" || beatmap.Difficulty == "easy" || beatmap.Difficulty == "utage" {
+		if b.Difficulty == "" || b.Difficulty == "easy" || b.Difficulty == "utage" {
 			// skip easy and utage maps
 			// TODO: support utage maps
 			return
 		}
 
 		// set SongID
-		beatmap.SongID = song.SongID
-		beatmaps = append(beatmaps, beatmap)
+		b.SongID = s.SongID
+		beatmaps = append(beatmaps, b)
 	})
 
 	return beatmaps, nil
 }
 
 // parse each row of beatmaps table
-func parseBeatmapRow(row *goquery.Selection, hasInternalLevel bool, beatmapType string) (Beatmap, error) {
-	var beatmap Beatmap
+func parseBeatmapRow(row *goquery.Selection, hasInternalLevel bool, beatmapType string) (beatmap.Beatmap, error) {
+	var b beatmap.Beatmap
 	columns := []string{"level", "internalLevel", "totalNotes", "Tap", "Hold", "Slide", "Touch", "Break"}
 	current := row.Find("th")
 	for i := 0; i < len(columns); i++ {
 		switch i {
 		case 0: // Level
-			beatmap.Level = current.Text()
+			b.Level = current.Text()
 		case 1: // 譜面定数
 			if !hasInternalLevel { // 定数列がなければskip
 				continue
@@ -204,41 +230,41 @@ func parseBeatmapRow(row *goquery.Selection, hasInternalLevel bool, beatmapType 
 			if internalLevelString != "" {
 				internalLevel, parseErr := strconv.ParseFloat(internalLevelString, 64)
 				if parseErr != nil {
-					return Beatmap{}, fmt.Errorf("failed to parse internal level: %w", parseErr)
+					return beatmap.Beatmap{}, fmt.Errorf("failed to parse internal level: %w", parseErr)
 				}
-				beatmap.InternalLevel = internalLevel
+				b.InternalLevel = internalLevel
 			}
 		case 2: // 総数
-			beatmap.TotalNotes = convertStringToInt32(current.Text())
+			b.TotalNotes = utils.ConvertStringToInt32(current.Text())
 		case 3: // Tap
-			beatmap.Tap = convertStringToInt32(current.Text())
+			b.Tap = utils.ConvertStringToInt32(current.Text())
 		case 4: // Hold
-			beatmap.Hold = convertStringToInt32(current.Text())
+			b.Hold = utils.ConvertStringToInt32(current.Text())
 		case 5: // Slide
-			beatmap.Slide = convertStringToInt32(current.Text())
+			b.Slide = utils.ConvertStringToInt32(current.Text())
 		case 6: // Touch
 			// standard譜面にはtouchない
 			if beatmapType == "std" {
 				continue
 			}
-			beatmap.Touch = convertStringToInt32(current.Text())
+			b.Touch = utils.ConvertStringToInt32(current.Text())
 		case 7: // Break
-			beatmap.Break = convertStringToInt32(current.Text())
+			b.Break = utils.ConvertStringToInt32(current.Text())
 		}
 		current = current.Next()
 	}
 
-	beatmap.Difficulty, _ = parseDifficulty(row.Find("th").AttrOr("style", "yo what's up"))
-	beatmap.Type = beatmapType
+	b.Difficulty, _ = beatmap.ParseDifficulty(row.Find("th").AttrOr("style", "yo what's up"))
+	b.Type = beatmapType
 	// TODO: get NoteDesigner
-	beatmap.NoteDesigner = "?"
-	beatmap.MaxDxScore = beatmap.TotalNotes * 3
+	b.NoteDesigner = "?"
+	b.MaxDxScore = b.TotalNotes * 3
 
 	// beatmap validation
-	beatmap.IsValid = true
-	isValidBeatmap := beatmap.TotalNotes > 0
+	b.IsValid = true
+	isValidBeatmap := b.TotalNotes > 0
 	if !isValidBeatmap {
-		beatmap.IsValid = false
+		b.IsValid = false
 	}
-	return beatmap, nil
+	return b, nil
 }

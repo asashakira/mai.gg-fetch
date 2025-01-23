@@ -1,9 +1,11 @@
-package main
+package song
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/asashakira/mai.gg-fetcher/utils"
 )
 
 type Song struct {
@@ -22,25 +24,25 @@ type Song struct {
 }
 
 func (s *Song) Format() {
-	s.Title = removeNote(s.Title)
-	s.Artist = removeNote(s.Artist)
-	s.Genre = removeNote(s.Genre)
-	s.Bpm = removeNote(s.Bpm)
-	s.ReleaseDate = removeNote(s.ReleaseDate)
-	s.ReleaseDate = formatDate(s.ReleaseDate)
-	s.DeleteDate = removeNote(s.DeleteDate)
-	s.DeleteDate = formatDate(s.DeleteDate)
+	s.Title = utils.RemoveNote(s.Title)
+	s.Artist = utils.RemoveNote(s.Artist)
+	s.Genre = utils.RemoveNote(s.Genre)
+	s.Bpm = utils.RemoveNote(s.Bpm)
+	s.ReleaseDate = utils.RemoveNote(s.ReleaseDate)
+	s.ReleaseDate = utils.FormatDate(s.ReleaseDate)
+	s.DeleteDate = utils.RemoveNote(s.DeleteDate)
+	s.DeleteDate = utils.FormatDate(s.DeleteDate)
 
-	s.AltKey = createAltKey(s.Title, s.Artist)
+	s.AltKey = utils.CreateAltKey(s.Title, s.Artist)
 }
 
-func printSongs(songs []Song) {
+func PrintSongs(songs []Song) {
 	for _, song := range songs {
-		printSong(song)
+		PrintSong(song)
 	}
 }
 
-func printSong(song Song) {
+func PrintSong(song Song) {
 	fmt.Println("SongID:  ", song.SongID)
 	fmt.Println("Title:   ", song.Title)
 	fmt.Println("Artist:  ", song.Artist)
@@ -52,7 +54,7 @@ func printSong(song Song) {
 	fmt.Println()
 }
 
-func dumpSongsAsJson(songs []Song) error {
+func DumpSongsAsJson(songs []Song) error {
 	jsonByte, err := json.Marshal(songs)
 	if err != nil {
 		return err

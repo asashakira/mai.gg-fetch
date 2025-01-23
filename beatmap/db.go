@@ -1,4 +1,4 @@
-package main
+package beatmap
 
 import (
 	"bytes"
@@ -8,14 +8,16 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/asashakira/mai.gg-fetcher/utils"
 )
 
-func upsertBeatmap(beatmap Beatmap) (Beatmap, error) {
-	dbBeatmap, err := getBeatmap(beatmap.SongID, beatmap.Difficulty, beatmap.Type)
+func UpsertBeatmap(beatmap Beatmap) (Beatmap, error) {
+	dbBeatmap, err := GetBeatmap(beatmap.SongID, beatmap.Difficulty, beatmap.Type)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			// insert if it does not exist in DB
-			newBeatmap, insertErr := insertBeatmap(beatmap)
+			newBeatmap, insertErr := InsertBeatmap(beatmap)
 			if insertErr != nil {
 				return Beatmap{}, fmt.Errorf("failed to insert beatmap: %w", insertErr)
 			}
@@ -29,7 +31,7 @@ func upsertBeatmap(beatmap Beatmap) (Beatmap, error) {
 
 	// update with new fields
 	beatmap.BeatmapID = dbBeatmap.BeatmapID
-	_, updateErr := updateDBBeatmap(beatmap)
+	_, updateErr := UpdateDBBeatmap(beatmap)
 	if updateErr != nil {
 		return Beatmap{}, fmt.Errorf("failed to update beatmap: %w", updateErr)
 	}
@@ -38,10 +40,10 @@ func upsertBeatmap(beatmap Beatmap) (Beatmap, error) {
 }
 
 // get beatmap using songID, difficulty and type
-func getBeatmap(songID, difficulty, beatmapType string) (Beatmap, error) {
+func GetBeatmap(songID, difficulty, beatmapType string) (Beatmap, error) {
 	// Define the URL
-	dbURL := fmt.Sprintf("http://localhost:8080/v1/beatmaps/by-song_id/%s", url.QueryEscape(songID)) // this api returns multiple beatmaps
-	err := validateURL(dbURL)
+	dbURL := fmt.Sprintf("http://localhost:8080/v1/beatmaps/by-song-id/%s", url.QueryEscape(songID)) // this api returns multiple beatmaps
+	err := utils.ValidateURL(dbURL)
 	if err != nil {
 		return Beatmap{}, fmt.Errorf("invalid url: %w", err)
 	}
@@ -93,10 +95,10 @@ func getBeatmap(songID, difficulty, beatmapType string) (Beatmap, error) {
 }
 
 // insert beatmap to db
-func insertBeatmap(beatmap Beatmap) (Beatmap, error) {
+func InsertBeatmap(beatmap Beatmap) (Beatmap, error) {
 	// Define URL
 	dbURL := "http://localhost:8080/v1/beatmaps"
-	err := validateURL(dbURL)
+	err := utils.ValidateURL(dbURL)
 	if err != nil {
 		return Beatmap{}, fmt.Errorf("invalid url: %w", err)
 	}
@@ -141,7 +143,7 @@ func insertBeatmap(beatmap Beatmap) (Beatmap, error) {
 	}
 }
 
-func updateDBBeatmap(beatmap Beatmap) (Beatmap, error) {
+func UpdateDBBeatmap(beatmap Beatmap) (Beatmap, error) {
 	// Define URL
 	dbURL := "http://localhost:8080/v1/beatmaps"
 
@@ -182,7 +184,7 @@ func updateDBBeatmap(beatmap Beatmap) (Beatmap, error) {
 	}
 }
 
-func getAllBeatmapsFromDB() ([]Beatmap, error) {
+func GetAllBeatmapsFromDB() ([]Beatmap, error) {
 	dbURL := "http://localhost:8080/v1/beatmaps"
 	req, _ := http.NewRequest("GET", dbURL, nil)
 	req.Header.Set("Content-Type", "application/json")

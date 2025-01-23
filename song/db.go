@@ -1,4 +1,4 @@
-package main
+package song
 
 import (
 	"bytes"
@@ -8,16 +8,18 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/asashakira/mai.gg-fetcher/utils"
 )
 
 // insert to db if song doesn't exist
 // if not update the song with given fields
-func upsertSong(song Song) (Song, error) {
-	dbsong, err := getSongByAltKey(song.Title, song.Artist)
+func UpsertSong(song Song) (Song, error) {
+	_, err := GetSongByAltKey(song.Title, song.Artist)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			// insert if it does not exist in DB
-			newSong, insertErr := insertSong(song)
+			newSong, insertErr := InsertSong(song)
 			if insertErr != nil {
 				return Song{}, fmt.Errorf("failed to insert song '%v': %w", song.Title, insertErr)
 			}
@@ -29,18 +31,15 @@ func upsertSong(song Song) (Song, error) {
 		return Song{}, fmt.Errorf("failed to get song '%v': %w", song.Title, err)
 	}
 
-	// update with new fields
-	song.SongID = dbsong.SongID
-	song.Version = ""
-	_, updateErr := updateDBSong(song)
+	updatedSong, updateErr := UpdateDBSong(song)
 	if updateErr != nil {
 		return Song{}, fmt.Errorf("failed to update song '%v': %w", song.Title, updateErr)
 	}
 
-	return dbsong, nil
+	return updatedSong, nil
 }
 
-func getAllSongsFromDB() ([]Song, error) {
+func GetAllSongsFromDB() ([]Song, error) {
 	dbURL := "http://localhost:8080/v1/songs"
 	req, _ := http.NewRequest("GET", dbURL, nil)
 	req.Header.Set("Content-Type", "application/json")
@@ -70,10 +69,10 @@ func getAllSongsFromDB() ([]Song, error) {
 
 // get songs from DB using title
 // may return multiple songs with same title
-func getSongsByTitle(title string) ([]Song, error) {
+func GetSongsByTitle(title string) ([]Song, error) {
 	// Define the URL
 	dbURL := fmt.Sprintf("http://localhost:8080/v1/songs/by-title/%s", url.QueryEscape(title))
-	err := validateURL(dbURL)
+	err := utils.ValidateURL(dbURL)
 	if err != nil {
 		return []Song{}, fmt.Errorf("invalid url: %w", err)
 	}
@@ -121,11 +120,11 @@ func getSongsByTitle(title string) ([]Song, error) {
 
 // get song from DB using altkey
 // returns one song
-func getSongByAltKey(title, artist string) (Song, error) {
+func GetSongByAltKey(title, artist string) (Song, error) {
 	// Define the URL
-	altkey := createAltKey(title, artist)
+	altkey := utils.CreateAltKey(title, artist)
 	dbURL := fmt.Sprintf("http://localhost:8080/v1/songs/by-altkey/%s", url.QueryEscape(altkey))
-	err := validateURL(dbURL)
+	err := utils.ValidateURL(dbURL)
 	if err != nil {
 		return Song{}, fmt.Errorf("invalid url: %w", err)
 	}
@@ -171,10 +170,10 @@ func getSongByAltKey(title, artist string) (Song, error) {
 	}
 }
 
-func getSongByTitle(title string) (Song, error) {
+func GetSongByTitle(title string) (Song, error) {
 	// Define the URL
 	dbURL := fmt.Sprintf("http://localhost:8080/v1/songs/by-title/%s", url.QueryEscape(title))
-	err := validateURL(dbURL)
+	err := utils.ValidateURL(dbURL)
 	if err != nil {
 		return Song{}, fmt.Errorf("invalid url: %w", err)
 	}
@@ -220,10 +219,10 @@ func getSongByTitle(title string) (Song, error) {
 	}
 }
 
-func insertSong(song Song) (Song, error) {
+func InsertSong(song Song) (Song, error) {
 	// Define URL
 	dbURL := "http://localhost:8080/v1/songs"
-	err := validateURL(dbURL)
+	err := utils.ValidateURL(dbURL)
 	if err != nil {
 		return Song{}, fmt.Errorf("invalid url: %w", err)
 	}
@@ -268,7 +267,7 @@ func insertSong(song Song) (Song, error) {
 	}
 }
 
-func updateDBSong(song Song) (Song, error) {
+func UpdateDBSong(song Song) (Song, error) {
 	// Define URL
 	dbURL := "http://localhost:8080/v1/songs"
 
@@ -298,11 +297,11 @@ func updateDBSong(song Song) (Song, error) {
 	switch r.StatusCode {
 	case http.StatusOK:
 		// parse response json
-		song := Song{}
-		if err := json.Unmarshal(bodyBytes, &song); err != nil {
+		s := Song{}
+		if err := json.Unmarshal(bodyBytes, &s); err != nil {
 			return Song{}, fmt.Errorf("failed to unmarshal JSON: %w", err)
 		}
-		return song, nil
+		return s, nil
 
 	default:
 		return Song{}, fmt.Errorf("error from server (status %d): %s", r.StatusCode, string(bodyBytes))

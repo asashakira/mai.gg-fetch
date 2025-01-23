@@ -1,4 +1,4 @@
-package main
+package beatmap
 
 import (
 	"encoding/json"
@@ -6,7 +6,6 @@ import (
 	"os"
 	"reflect"
 	"regexp"
-	"strings"
 )
 
 type Beatmap struct {
@@ -27,13 +26,13 @@ type Beatmap struct {
 	IsValid       bool    `json:"isValid,omitempty"`
 }
 
-func printBeatmaps(beatmaps []Beatmap) {
+func PrintBeatmaps(beatmaps []Beatmap) {
 	for _, beatmap := range beatmaps {
-		printBeatmap(beatmap)
+		PrintBeatmap(beatmap)
 	}
 }
 
-func printBeatmap(b Beatmap) {
+func PrintBeatmap(b Beatmap) {
 	values := reflect.ValueOf(b)
 	// types := values.Type()
 	for i := 0; i < values.NumField(); i++ {
@@ -44,7 +43,7 @@ func printBeatmap(b Beatmap) {
 	fmt.Println()
 }
 
-func parseDifficulty(s string) (string, error) {
+func ParseDifficulty(s string) (string, error) {
 	colorToDifficulty := map[string]string{
 		"#00ced1": "easy",
 		"#98fb98": "basic",
@@ -64,7 +63,7 @@ func parseDifficulty(s string) (string, error) {
 	return colorToDifficulty[color], nil
 }
 
-func dumpBeatmapsAsJson(beatmaps []Beatmap) error {
+func DumpBeatmapsAsJson(beatmaps []Beatmap) error {
 	jsonByte, err := json.Marshal(beatmaps)
 	if err != nil {
 		return err
@@ -77,12 +76,4 @@ func dumpBeatmapsAsJson(beatmaps []Beatmap) error {
 		return err
 	}
 	return nil
-}
-
-// if the beatmap has Touch notes -> dx beatmap
-func determineBeatmapType(headerText string) string {
-	if strings.Contains(headerText, "Touch") {
-		return "dx"
-	}
-	return "std"
 }

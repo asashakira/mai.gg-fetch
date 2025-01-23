@@ -7,3 +7,8 @@ type User struct {
 	GameName string `json:"gameName,omitempty"`
 	TagLine  string `json:"tagLine,omitempty"`
 }
+
+type UserScrapeMetadata struct {
+	UserID       string `json:"userID,omitempty"`
+	LastPlayedAt string `json:"lastPlayedAt,omitempty"`
+}

@@ -1,4 +1,4 @@
-package main
+package maimai
 
 import (
 	"crypto/tls"
@@ -10,17 +10,17 @@ import (
 )
 
 const (
-	maimaiURL = "https://maimaidx.jp/maimai-mobile"
+	URL = "https://maimaidx.jp/maimai-mobile"
 )
 
-type MaimaiClient struct {
+type Client struct {
 	HTTPClient *http.Client
 }
 
-func New() *MaimaiClient {
+func New() *Client {
 	cookiejar, _ := cookiejar.New(nil)
 
-	c := &MaimaiClient{}
+	c := &Client{}
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -34,8 +34,8 @@ func New() *MaimaiClient {
 	return c
 }
 
-func (m *MaimaiClient) Login(segaId, password string) error {
-	res, err := m.HTTPClient.Get(maimaiURL)
+func (m *Client) Login(segaId, password string) error {
+	res, err := m.HTTPClient.Get(URL)
 	if err != nil {
 		return err
 	}
@@ -54,13 +54,13 @@ func (m *MaimaiClient) Login(segaId, password string) error {
 	values.Set("segaId", segaId)
 	values.Set("password", password)
 	values.Set("token", csrfToken)
-	_, err = m.HTTPClient.PostForm(maimaiURL+"/submit", values)
+	_, err = m.HTTPClient.PostForm(URL+"/submit", values)
 	if err != nil {
 		return err
 	}
 
 	// redirect to set cookies
-	_, err = m.HTTPClient.Get(maimaiURL + "/aimeList/submit/?idx=0")
+	_, err = m.HTTPClient.Get(URL + "/aimeList/submit/?idx=0")
 	if err != nil {
 		return err
 	}

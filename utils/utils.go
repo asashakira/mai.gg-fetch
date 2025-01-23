@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"errors"
@@ -15,14 +15,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-func check(e error) {
-	if e != nil {
-		// fmt.Println(e)
-		panic(e)
-	}
-}
-
-func fetchDocumentWithRetry(url string) (*goquery.Document, error) {
+func FetchDocumentWithRetry(url string) (*goquery.Document, error) {
 	for {
 		req, _ := http.NewRequest("GET", url, nil)
 		req.Header.Set("Content-Type", "application/json")
@@ -53,7 +46,7 @@ func fetchDocumentWithRetry(url string) (*goquery.Document, error) {
 	}
 }
 
-func saveHTMLToFile(html, directory, filename string) error {
+func SaveHTMLToFile(html, directory, filename string) error {
 	// write to file
 	os.MkdirAll(directory, os.ModePerm)
 	err := os.WriteFile(directory+filename, []byte(html), 0666)
@@ -64,7 +57,7 @@ func saveHTMLToFile(html, directory, filename string) error {
 	return nil
 }
 
-func loadHTMLDocument(filePath string) (*goquery.Document, error) {
+func LoadHTMLDocument(filePath string) (*goquery.Document, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s: %w", filePath, err)
@@ -74,14 +67,15 @@ func loadHTMLDocument(filePath string) (*goquery.Document, error) {
 }
 
 // create alt key using song title and artist
-func createAltKey(title, artist string) string {
+func CreateAltKey(title, artist string) string {
 	altkey := title + artist
 	altkey = strings.ToLower(altkey) // all lowercase
 	// altTitle = strings.Join(strings.Fields(altTitle), "") // remove all various whitespace characters
-	return removeFromString(altkey, `[^一-龠ぁ-ゔァ-ヴーa-zA-Z0-9ａ-ｚＡ-Ｚ０-９々〆〤ヶ]+`)
+	return RemoveFromString(altkey, `[^一-龠ぁ-ゔァ-ヴーa-zA-Z0-9ａ-ｚＡ-Ｚ０-９々〆〤ヶ]+`)
 }
 
-func convertStringToInt32(s string) int32 {
+// strips everything but numbers from a string and convert to int32
+func ConvertStringToInt32(s string) int32 {
 	re := regexp.MustCompile(`[0-9]+`)
 	result, _ := strconv.Atoi(strings.Join(re.FindAllString(s, -1), ""))
 	return int32(result)
@@ -89,33 +83,33 @@ func convertStringToInt32(s string) int32 {
 
 // remove *n where n is an integer
 // xd
-func removeNote(s string) string {
+func RemoveNote(s string) string {
 	if strings.Contains(s, "*27") { // DECO*27
 		return s
 	}
-	return removeFromString(s, `\*[0-9]+`)
+	return RemoveFromString(s, `\*[0-9]+`)
 }
 
-func removeTM(s string) string {
-	return removeFromString(s, `™`)
+func RemoveTM(s string) string {
+	return RemoveFromString(s, `™`)
 }
 
-func removeFromString(input, pattern string) string {
+func RemoveFromString(input, pattern string) string {
 	re := regexp.MustCompile(pattern)
 	return re.ReplaceAllString(input, "")
 }
 
-func getFromString(input, pattern string) string {
+func FindFromString(input, pattern string) string {
 	re := regexp.MustCompile(pattern)
 	return re.FindString(input)
 }
 
-func formatDate(s string) string {
+func FormatDate(s string) string {
 	return strings.ReplaceAll(s, "/", "-")
 }
 
-// validateURL checks if the input string is a valid URL
-func validateURL(input string) error {
+// ValidateURL checks if the input string is a valid URL
+func ValidateURL(input string) error {
 	parsedURL, err := url.ParseRequestURI(input)
 	if err != nil {
 		return errors.New("invalid URL format")
@@ -134,7 +128,7 @@ func validateURL(input string) error {
 	return nil
 }
 
-func dirExists(path string) (bool, error) {
+func DirExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
 		return true, nil
@@ -145,8 +139,8 @@ func dirExists(path string) (bool, error) {
 	return false, err
 }
 
-// fileExists checks if a file exists and is not a directory
-func fileExists(filepath string) (bool, error) {
+// FileExists checks if a file exists and is not a directory
+func FileExists(filepath string) (bool, error) {
 	info, err := os.Stat(filepath)
 	if err == nil {
 		// exists
@@ -158,7 +152,29 @@ func fileExists(filepath string) (bool, error) {
 	return false, err
 }
 
-func makeFilenameFromURL(url string) string {
-	s := removeFromString(url, `https://gamerch.com/maimai/`)
-	return s + ".html"
+// parse imgSrc to determine difficulty
+func GetDifficultyFromImgSrc(imgSrc string) string {
+	imgName := RemoveFromString(imgSrc, `https://maimaidx.jp/maimai-mobile/img/`)
+	switch imgName {
+	case "diff_basic.png":
+		return "basic"
+	case "diff_advanced.png":
+		return "advanced"
+	case "diff_expert.png":
+		return "expert"
+	case "diff_master.png":
+		return "master"
+	case "diff_remaster.png":
+		return "re:master"
+	default:
+		return ""
+	}
+}
+
+// if the beatmap has Touch notes -> dx beatmap
+func DetermineBeatmapType(headerText string) string {
+	if strings.Contains(headerText, "Touch") {
+		return "dx"
+	}
+	return "std"
 }
